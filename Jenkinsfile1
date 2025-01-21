@@ -1,29 +1,59 @@
-pipeline { 
-    agent { label 'slave-1'}
+pipeline {
+    agent any
     
     tools {
         maven 'maven3'
-        jdk 'jdk17'
+    }
+    
+    environment {
+        SCANNER_HOME = tool "sonar-scanner"
     }
 
     stages {
-        
-        stage('Compile') {
+        stage('Git checkout') {
             steps {
-            sh  "mvn compile"
+                git branch: 'main', url: 'https://github.com/PrinceMeenia/FullStack-Blogging-App.git'
             }
         }
         
+        stage('Build') {
+            steps {
+                sh "mvn clean package"
+            }
+        }
+
         stage('Test') {
             steps {
                 sh "mvn test"
             }
         }
-        
-        stage('Package') {
+
+        stage('Sonarqube Analysis') {
             steps {
-                sh "mvn package"
+                withSonarQubeEnv('sonar-server') {
+                    sh '''
+                        "${SCANNER_HOME}/bin/sonar-scanner" \
+                        -Dsonar.projectName=mvnsonarnexus \
+                        -Dsonar.projectKey=mvnsonarnexus \
+                        -Dsonar.java.binaries=target/classes \
+                        -X
+                    '''
+                }
             }
         }
-    }
-}
+
+        stage('Trivy FS scan') {
+            steps {
+                sh "trivy fs --format table -o fsreport.html ."
+            }
+        }
+
+        stage('Build & publish artifact') {
+            steps {
+                withMaven(globalMavenSettingsConfig: 'maven-settings', maven: 'maven3') {
+                    sh "mvn deploy"
+                }
+            }
+        }
+    }  // Closing the stages block
+}  // Closing the pipeline block
